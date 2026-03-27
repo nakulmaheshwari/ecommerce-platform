@@ -1,0 +1,61 @@
+{
+  "realm": "ecommerce",
+  "enabled": true,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "accessTokenLifespan": 3600,
+  "refreshTokenMaxReuse": 0,
+  "roles": {
+    "realm": [
+      { "name": "customer", "description": "Regular customer" },
+      { "name": "admin", "description": "Platform administrator" },
+      { "name": "seller", "description": "Product seller" },
+      { "name": "internal-service", "description": "Service-to-service calls" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "ecommerce-backend",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "backend-client-secret-change-in-prod",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "3600"
+      }
+    },
+    {
+      "clientId": "ecommerce-frontend",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:3000/*", "http://localhost:8080/*"],
+      "webOrigins": ["*"],
+      "protocol": "openid-connect"
+    }
+  ],
+  "users": [
+    {
+      "username": "testcustomer",
+      "email": "customer@test.com",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "Test@1234", "temporary": false }],
+      "realmRoles": ["customer"]
+    },
+    {
+      "username": "testadmin",
+      "email": "admin@test.com",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "Admin@1234", "temporary": false }],
+      "realmRoles": ["admin"]
+    }
+  ]
+}

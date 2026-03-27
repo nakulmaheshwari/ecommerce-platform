@@ -1,0 +1,101 @@
+server:
+  port: 8082
+  shutdown: graceful   # Waits for in-flight requests before shutdown
+
+spring:
+  # PostgreSQL
+  datasource:
+    url: jdbc:postgresql://localhost:5432/identity_db
+    username: ecom_admin
+    password: ecom_secret_123
+    hikari:
+      connection-timeout: 20000
+      maximum-pool-size: 10
+      minimum-idle: 2
+      idle-timeout: 300000
+      pool-name: IdentityHikariPool
+
+  # JPA
+  jpa:
+    hibernate:
+      ddl-auto: validate      # Flyway manages schema — Hibernate only validates
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+
+  # Flyway
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+
+  # Kafka
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+
+  # Security — JWT validated against Keycloak's public key (fetched automatically)
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/ecommerce
+          jwk-set-uri: http://localhost:8180/realms/ecommerce/protocol/openid-connect/certs
+
+# Keycloak admin client
+keycloak:
+  server-url: http://localhost:8180
+  realm: ecommerce
+  client-id: ecommerce-backend
+  client-secret: backend-client-secret-change-in-prod
+
+# Eureka service discovery
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+    fetch-registry: true
+    register-with-eureka: true
+  instance:
+    prefer-ip-address: true
+    health-check-url-path: /actuator/health
+
+# Actuator — expose health, metrics, info
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true   # Enables /health/readiness and /health/liveness for K8s
+  tracing:
+    sampling:
+      probability: 1.0  # 100% tracing in dev; set to 0.1 in production
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+
+# Logging — structured for Loki/ELK
+logging:
+  level:
+    com.ecommerce: DEBUG
+    org.springframework.security: INFO
+    org.hibernate.SQL: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n"
