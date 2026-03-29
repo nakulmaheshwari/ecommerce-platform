@@ -268,7 +268,7 @@ public class InventoryService {
             .warehouseId("WH-MAIN")
             .build();
 
-        inventoryRepository.save(inventory);
+        inventoryRepository.saveAndFlush(inventory); // flush before recordMovement queries the DB
         recordMovement(sku, "INITIAL", 0, productId, "PRODUCT_CREATED");
 
         log.info("Initialized inventory record skuId={} productId={}", sku, productId);
