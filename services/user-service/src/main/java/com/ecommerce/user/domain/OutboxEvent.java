@@ -2,7 +2,6 @@ package com.ecommerce.user.domain;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -37,6 +36,7 @@ public class OutboxEvent {
     @Builder.Default
     private Boolean published = false;
 
-    @CreationTimestamp
-    private Instant createdAt;
+    @Column(nullable = false, updatable = false)
+    @Builder.Default
+    private Instant createdAt = Instant.now();
 }
