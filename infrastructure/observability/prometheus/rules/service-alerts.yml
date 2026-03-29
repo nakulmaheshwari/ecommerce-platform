@@ -1,0 +1,300 @@
+groups:
+
+  # ═══════════════════════════════════════════════
+  # SERVICE AVAILABILITY
+  # ═══════════════════════════════════════════════
+  - name: service_availability
+    interval: 30s
+    rules:
+
+      # Service is completely down (no scrape for 60s)
+      - alert: ServiceDown
+        expr: up == 0
+        for: 60s
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "{{ $labels.job }} is DOWN"
+          description: >
+            {{ $labels.job }} has been unreachable for more than 60 seconds.
+            Last seen: {{ $value }}
+          runbook: "https://wiki/runbooks/service-down"
+
+      # Service restarting frequently (process start time changing)
+      - alert: ServiceFrequentRestarts
+        expr: |
+          changes(process_start_time_seconds[15m]) > 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} restarting frequently"
+          description: "{{ $labels.job }} has restarted {{ $value }} times in 15 minutes"
+
+  # ═══════════════════════════════════════════════
+  # LATENCY (p99 response time)
+  # ═══════════════════════════════════════════════
+  - name: latency_alerts
+    rules:
+
+      # p99 latency above 500ms for 5 minutes
+      - alert: HighLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_server_requests_seconds_bucket{
+              uri!~".*(actuator|health|prometheus).*"
+            }[5m])) by (job, le)
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p99 latency on {{ $labels.job }}"
+          description: >
+            p99 latency on {{ $labels.job }} is {{ $value | humanizeDuration }}.
+            SLO target is 500ms.
+          runbook: "https://wiki/runbooks/high-latency"
+
+      # p99 latency above 2s — SLO breach
+      - alert: CriticalLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_server_requests_seconds_bucket{
+              uri!~".*(actuator|health|prometheus).*"
+            }[5m])) by (job, le)
+          ) > 2.0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CRITICAL: SLO breach on {{ $labels.job }}"
+          description: "p99 latency is {{ $value | humanizeDuration }} — above 2s SLO"
+
+      # Order placement specifically — tighter SLO
+      - alert: OrderServiceLatencyHigh
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_server_requests_seconds_bucket{
+              job="order-service",
+              uri=~".*/orders.*",
+              method="POST"
+            }[5m])) by (le)
+          ) > 0.3
+        for: 3m
+        labels:
+          severity: warning
+          service: order-service
+        annotations:
+          summary: "Order placement p99 above 300ms"
+          description: "Order placement p99 is {{ $value | humanizeDuration }}"
+
+  # ═══════════════════════════════════════════════
+  # ERROR RATE
+  # ═══════════════════════════════════════════════
+  - name: error_rate_alerts
+    rules:
+
+      # 5xx error rate above 1% for 5 minutes
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_server_requests_seconds_count{
+            status=~"5..",
+            uri!~".*(actuator|health).*"
+          }[5m])) by (job)
+          /
+          sum(rate(http_server_requests_seconds_count{
+            uri!~".*(actuator|health).*"
+          }[5m])) by (job)
+          > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on {{ $labels.job }}"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 1%)"
+
+      # Payment service error rate — stricter threshold (0.1%)
+      - alert: PaymentServiceErrorRate
+        expr: |
+          sum(rate(http_server_requests_seconds_count{
+            job="payment-service", status=~"5.."
+          }[5m]))
+          /
+          sum(rate(http_server_requests_seconds_count{
+            job="payment-service"
+          }[5m]))
+          > 0.001
+        for: 2m
+        labels:
+          severity: critical
+          service: payment-service
+        annotations:
+          summary: "CRITICAL: Payment service error rate elevated"
+          description: "Payment service error rate: {{ $value | humanizePercentage }}"
+          runbook: "https://wiki/runbooks/payment-errors"
+
+  # ═══════════════════════════════════════════════
+  # KAFKA CONSUMER LAG
+  # This is the most important async metric
+  # ═══════════════════════════════════════════════
+  - name: kafka_lag_alerts
+    rules:
+
+      # Any consumer group lagging more than 1000 messages
+      - alert: KafkaConsumerLagHigh
+        expr: |
+          kafka_consumergroup_lag > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka consumer lag: {{ $labels.consumergroup }}"
+          description: >
+            Consumer group {{ $labels.consumergroup }} is lagging {{ $value }} messages
+            on topic {{ $labels.topic }} partition {{ $labels.partition }}.
+            This means {{ $labels.consumergroup }} is falling behind.
+          runbook: "https://wiki/runbooks/kafka-lag"
+
+      # Critical lag — payment or order consumers falling way behind
+      - alert: KafkaConsumerLagCritical
+        expr: |
+          kafka_consumergroup_lag{
+            consumergroup=~"(payment|order|inventory)-service.*"
+          } > 5000
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CRITICAL Kafka lag on {{ $labels.consumergroup }}"
+          description: >
+            CRITICAL: {{ $labels.consumergroup }} is {{ $value }} messages behind.
+            Orders may not be confirmed. Payments may not be processed.
+
+      # Consumer group is not consuming at all (lag growing but no progress)
+      - alert: KafkaConsumerNotConsuming
+        expr: |
+          rate(kafka_consumergroup_lag[5m]) > 0
+          and
+          kafka_consumergroup_lag > 100
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Consumer {{ $labels.consumergroup }} appears stuck"
+          description: "Lag is growing and never decreasing for {{ $labels.topic }}"
+
+  # ═══════════════════════════════════════════════
+  # DATABASE CONNECTION POOL
+  # ═══════════════════════════════════════════════
+  - name: database_alerts
+    rules:
+
+      # HikariCP pool is nearly exhausted
+      - alert: DatabaseConnectionPoolExhausted
+        expr: |
+          hikaricp_connections_active
+          /
+          hikaricp_connections_max
+          > 0.85
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DB connection pool {{ $value | humanizePercentage }} full on {{ $labels.job }}"
+          description: >
+            {{ $labels.job }} HikariCP pool is {{ $value | humanizePercentage }} utilised.
+            At 100%, new requests will queue and latency will spike.
+
+      # Connection pool fully exhausted — requests will fail
+      - alert: DatabaseConnectionPoolFull
+        expr: |
+          hikaricp_connections_active >= hikaricp_connections_max
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CRITICAL: DB pool exhausted on {{ $labels.job }}"
+          description: "All {{ $value }} connections in use. New requests are failing."
+
+      # Slow DB queries — queries taking more than 1 second
+      - alert: SlowDatabaseQueries
+        expr: |
+          histogram_quantile(0.99,
+            rate(hikaricp_connections_acquire_seconds_bucket[5m])
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow DB connection acquisition on {{ $labels.job }}"
+          description: "p99 connection wait time is {{ $value | humanizeDuration }}"
+
+  # ═══════════════════════════════════════════════
+  # JVM HEALTH
+  # ═══════════════════════════════════════════════
+  - name: jvm_alerts
+    rules:
+
+      # JVM heap above 85%
+      - alert: JvmHeapHighUsage
+        expr: |
+          jvm_memory_used_bytes{area="heap"}
+          /
+          jvm_memory_max_bytes{area="heap"}
+          > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High JVM heap usage on {{ $labels.job }}"
+          description: "Heap is {{ $value | humanizePercentage }} full. OOMKilled risk."
+
+      # JVM heap above 95% — imminent OOM
+      - alert: JvmHeapCritical
+        expr: |
+          jvm_memory_used_bytes{area="heap"}
+          /
+          jvm_memory_max_bytes{area="heap"}
+          > 0.95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CRITICAL: JVM heap nearly full on {{ $labels.job }}"
+          description: "Heap at {{ $value | humanizePercentage }}. OOMKilled imminent."
+
+      # GC pause time high — indicates memory pressure
+      - alert: JvmGcPauseHigh
+        expr: |
+          rate(jvm_gc_pause_seconds_sum[5m])
+          /
+          rate(jvm_gc_pause_seconds_count[5m])
+          > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Long GC pauses on {{ $labels.job }}"
+          description: "Average GC pause: {{ $value | humanizeDuration }}"
+
+  # ═══════════════════════════════════════════════
+  # OUTBOX — event delivery health
+  # ═══════════════════════════════════════════════
+  - name: outbox_alerts
+    rules:
+
+      # Custom metric — add this to each service's outbox poller
+      # Records count of unpublished events older than 5 minutes
+      - alert: OutboxEventsStuck
+        expr: |
+          outbox_unpublished_events_total > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Outbox events stuck on {{ $labels.job }}"
+          description: >
+            {{ $value }} events in {{ $labels.job }} outbox have not been published.
+            Kafka may be down or the outbox poller has a bug.
+          runbook: "https://wiki/runbooks/outbox-stuck"

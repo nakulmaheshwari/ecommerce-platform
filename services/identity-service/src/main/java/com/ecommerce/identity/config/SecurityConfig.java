@@ -25,6 +25,7 @@ public class SecurityConfig extends BaseSecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                 .requestMatchers(IDENTITY_PUBLIC).permitAll()
+                    .requestMatchers("/actuator/**").permitAll()
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth2 -> oauth2
                 .jwt(jwt -> jwt.jwtAuthenticationConverter(new KeycloakJwtConverter())))

@@ -1,0 +1,21 @@
+server:
+  port: 8090
+  shutdown: graceful
+
+spring:
+  elasticsearch:
+    uris: http://localhost:9200
+  
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: search-service-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/ecommerce

@@ -11,6 +11,10 @@ volumes:
   postgres_payment_data:
   redis_data:
   keycloak_data:
+  elasticsearch_data:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:
 
 services:
 
@@ -116,7 +120,7 @@ services:
     depends_on:
       - kafka
     ports:
-      - "9093:8080"
+      - "9080:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: ecommerce-local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
@@ -176,5 +180,170 @@ services:
     ports:
       - "1025:1025"   # SMTP
       - "8025:8025"   # Web UI
+    networks:
+      - ecommerce-net
+
+  # ─────────────────────────────────────────
+  # Kafka Exporter — consumer lag as Prometheus metrics
+  # ─────────────────────────────────────────
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.7.0
+    container_name: ecom-kafka-exporter
+    restart: unless-stopped
+    command:
+      - --kafka.server=kafka:29092
+      - --web.listen-address=:9308
+    ports:
+      - "9308:9308"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - ecommerce-net
+
+  # ─────────────────────────────────────────
+  # Prometheus — scrapes /actuator/prometheus from all services
+  # UI: http://localhost:9090
+  # ─────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.50.1
+    container_name: ecom-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./observability/prometheus/rules:/etc/prometheus/rules
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - ecommerce-net
+
+  # ─────────────────────────────────────────
+  # Alertmanager — routes alerts (Slack/email/PagerDuty)
+  # UI: http://localhost:9093
+  # ─────────────────────────────────────────
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: ecom-alertmanager
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+    networks:
+      - ecommerce-net
+
+  # ─────────────────────────────────────────
+  # Grafana — dashboards for the four golden signals
+  # UI: http://localhost:3000  (admin / admin123)
+  # ─────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.3.3
+    container_name: ecom-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboard-files/platform-overview.json
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - ecommerce-net
+
+  # ─────────────────────────────────────────
+  # Loki — log aggregation backend for Grafana
+  # ─────────────────────────────────────────
+  loki:
+    image: grafana/loki:2.9.4
+    container_name: ecom-loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - ecommerce-net
+
+  # ─────────────────────────────────────────
+  # Promtail — ships container logs to Loki
+  # ─────────────────────────────────────────
+  promtail:
+    image: grafana/promtail:2.9.4
+    container_name: ecom-promtail
+    restart: unless-stopped
+    volumes:
+      - /var/log:/var/log
+      - ./observability/promtail.yml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - ecommerce-net
+
+  # ─────────────────────────────────────────────
+  # Elasticsearch — search engine
+  # UI via Kibana: http://localhost:5601
+  # Direct API: http://localhost:9200
+  # ─────────────────────────────────────────────
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.1
+    container_name: ecom-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false        # Disabled for local dev only
+      - xpack.security.http.ssl.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m     # Tune for local dev
+      - cluster.name=ecommerce-cluster
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - ecommerce-net
+    healthcheck:
+      test: ["CMD-SHELL",
+             "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ─────────────────────────────────────────────
+  # Kibana — Elasticsearch UI
+  # Useful for inspecting index mappings and running queries
+  # ─────────────────────────────────────────────
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.1
+    container_name: ecom-kibana
+    restart: unless-stopped
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
     networks:
       - ecommerce-net

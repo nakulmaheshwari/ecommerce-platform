@@ -1,0 +1,687 @@
+{
+  "info": {
+    "name": "Review Service",
+    "description": "Postman collection for the Review Service (port 8090). Covers all endpoints: public review reads, customer review submission, helpfulness voting, abuse reporting, and admin moderation.\n\n## Setup\n1. Set `baseUrl` variable to `http://localhost:8090`\n2. Set `keycloakUrl` to `http://localhost:8180`\n3. Run the **Get Customer Token** or **Get Admin Token** request first — it auto-saves the token\n4. All authenticated requests use the saved token automatically",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",      "value": "http://localhost:8090",  "type": "string" },
+    { "key": "keycloakUrl",  "value": "http://localhost:8180",  "type": "string" },
+    { "key": "realm",        "value": "ecommerce",              "type": "string" },
+    { "key": "clientId",     "value": "ecommerce-frontend",     "type": "string" },
+    { "key": "productId",    "value": "a1b2c3d4-0001-0001-0001-000000000001", "type": "string" },
+    { "key": "reviewId",     "value": "",                       "type": "string" },
+    { "key": "customerToken","value": "",                       "type": "string" },
+    { "key": "adminToken",   "value": "",                       "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Get Customer Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.collectionVariables.set('customerToken', json.access_token);",
+                  "pm.test('Token received', () => pm.expect(json.access_token).to.exist);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "password" },
+                { "key": "client_id",  "value": "{{clientId}}" },
+                { "key": "username",   "value": "testcustomer" },
+                { "key": "password",   "value": "Test@1234" }
+              ]
+            },
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "Fetches a JWT for testcustomer and auto-saves it to the `customerToken` variable."
+          }
+        },
+        {
+          "name": "Get Admin Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "pm.collectionVariables.set('adminToken', json.access_token);",
+                  "pm.test('Admin token received', () => pm.expect(json.access_token).to.exist);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "password" },
+                { "key": "client_id",  "value": "{{clientId}}" },
+                { "key": "username",   "value": "admin" },
+                { "key": "password",   "value": "Admin@1234" }
+              ]
+            },
+            "url": "{{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "description": "Fetches an admin JWT and auto-saves it to `adminToken`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public — Read Reviews",
+      "item": [
+        {
+          "name": "Get Product Reviews (with Aggregate)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Has reviews array', () => pm.expect(body.reviews).to.be.an('array'));",
+                  "pm.test('Has aggregate', () => pm.expect(body.aggregate).to.exist);",
+                  "pm.test('Average rating in range', () => {",
+                  "  if (body.aggregate && body.aggregate.totalReviews > 0) {",
+                  "    pm.expect(body.aggregate.averageRating).to.be.within(1, 5);",
+                  "  }",
+                  "});",
+                  "// Auto-save the first reviewId for subsequent tests",
+                  "if (body.reviews && body.reviews.length > 0) {",
+                  "  pm.collectionVariables.set('reviewId', body.reviews[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/{{productId}}/reviews?page=0&size=10&verifiedOnly=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "products", "{{productId}}", "reviews"],
+              "query": [
+                { "key": "page",         "value": "0" },
+                { "key": "size",         "value": "10" },
+                { "key": "verifiedOnly", "value": "false", "description": "Set to true to show only verified purchase reviews" }
+              ]
+            },
+            "description": "Returns paginated reviews AND the aggregate (totalReviews, averageRating, distribution) in one response. No authentication required.\n\nThe first reviewId found is auto-saved to `reviewId` variable."
+          }
+        },
+        {
+          "name": "Get Product Reviews — Verified Only",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "body.reviews.forEach(r => {",
+                  "  pm.test('Review is verified purchase: ' + r.id, () => {",
+                  "    pm.expect(r.verifiedPurchase).to.be.true;",
+                  "  });",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/products/{{productId}}/reviews?page=0&size=10&verifiedOnly=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "products", "{{productId}}", "reviews"],
+              "query": [
+                { "key": "page",         "value": "0" },
+                { "key": "size",         "value": "10" },
+                { "key": "verifiedOnly", "value": "true" }
+              ]
+            },
+            "description": "Returns only reviews where `verifiedPurchase = true` (confirmed buyers)."
+          }
+        },
+        {
+          "name": "Get Rating Aggregate Only",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Has productId', () => pm.expect(body.productId).to.exist);",
+                  "pm.test('Has totalReviews', () => pm.expect(body.totalReviews).to.be.a('number'));",
+                  "pm.test('Has averageRating', () => pm.expect(body.averageRating).to.exist);",
+                  "pm.test('Distribution adds up', () => {",
+                  "  const total = body.rating1Count + body.rating2Count + body.rating3Count",
+                  "    + body.rating4Count + body.rating5Count;",
+                  "  pm.expect(total).to.equal(body.totalReviews);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/products/{{productId}}/reviews/aggregate",
+            "description": "Lightweight endpoint — returns only the star rating summary. Used by product listing pages showing ⭐4.3 (847 reviews) per card without needing full review text."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer — Submit & Manage",
+      "item": [
+        {
+          "name": "Submit Review (5 stars)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('Review status is APPROVED', () => pm.expect(body.status).to.equal('APPROVED'));",
+                  "pm.test('Rating matches', () => pm.expect(body.rating).to.equal(5));",
+                  "pm.collectionVariables.set('reviewId', body.id);",
+                  "console.log('Saved reviewId:', body.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"rating\": 5,\n  \"title\": \"Excellent product!\",\n  \"body\": \"Really loved this item. Great build quality and fast delivery. Would definitely buy again.\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/reviews",
+            "description": "Submit a new review. The system automatically:\n1. Calls Order Service to check if you purchased this product (sets `verifiedPurchase`)\n2. Saves with status PENDING then auto-approves\n3. Updates the `review_aggregates` table atomically\n4. Writes a `review.submitted` outbox event for Kafka\n\nThe new `reviewId` is auto-saved to the collection variable."
+          }
+        },
+        {
+          "name": "Submit Review — Duplicate (409 expected)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 409 Conflict', () => pm.response.to.have.status(409));",
+                  "pm.test('Error mentions review', () => {",
+                  "  pm.expect(pm.response.text()).to.include('already');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"rating\": 4,\n  \"title\": \"Second review attempt\",\n  \"body\": \"This should return 409 because I already reviewed this product.\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/reviews",
+            "description": "Tests the one-review-per-user-per-product constraint. Submitting to the same productId a second time must return 409 Conflict."
+          }
+        },
+        {
+          "name": "Submit Review — Validation Failure (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"rating\": 7,\n  \"body\": \"Short\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/reviews",
+            "description": "Tests validation: rating=7 (exceeds max 5) and body=5 chars (below min 10) should both produce 400 Bad Request."
+          }
+        },
+        {
+          "name": "Get My Reviews",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Has reviews array', () => pm.expect(body.reviews).to.be.an('array'));",
+                  "pm.test('Aggregate is null (not returned for my reviews)', () => {",
+                  "  pm.expect(body.aggregate).to.be.null;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/reviews?page=0&size=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "reviews"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" }
+              ]
+            },
+            "description": "Returns the authenticated user's own reviews. Unlike the product reviews endpoint, this returns ALL statuses (PENDING, APPROVED, REJECTED) so the user can see if their review was rejected."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer — Vote & Report",
+      "item": [
+        {
+          "name": "Vote Helpful",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Total votes incremented', () => {",
+                  "  pm.expect(body.totalVotes).to.be.at.least(1);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"helpful\": true }"
+            },
+            "url": "{{baseUrl}}/api/v1/reviews/{{reviewId}}/vote",
+            "description": "Mark a review as helpful. Rules:\n- Cannot vote on your own review (400)\n- Same vote again is idempotent\n- Changing vote (true→false): adjusts helpfulVotes, total_votes unchanged\n- First vote: both helpfulVotes and totalVotes increment"
+          }
+        },
+        {
+          "name": "Vote Not Helpful",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"helpful\": false }"
+            },
+            "url": "{{baseUrl}}/api/v1/reviews/{{reviewId}}/vote",
+            "description": "Changes an existing helpful vote to 'not helpful'. If this user already voted helpful, `helpfulVotes` is decremented. `totalVotes` stays the same (they haven't submitted a new vote)."
+          }
+        },
+        {
+          "name": "Report Review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => pm.response.to.have.status(202));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"FAKE\",\n  \"details\": \"This account was created yesterday and has only reviewed products at 5 stars.\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/reviews/{{reviewId}}/report",
+            "description": "Report a review for abuse. Valid reasons: SPAM, FAKE, OFFENSIVE, IRRELEVANT, OTHER.\n\nAuto-flag rule: if `report_count >= 5` and review is APPROVED, status moves to FLAGGED and review is hidden from public.\n\nReturns 409 if the same user tries to report the same review twice."
+          }
+        },
+        {
+          "name": "Report Review — Duplicate (409 expected)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"SPAM\",\n  \"details\": \"Second report attempt — should fail.\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/reviews/{{reviewId}}/report",
+            "description": "Run this after Report Review. Sending a second report for the same review from the same user must return 409 Conflict."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Moderation",
+      "item": [
+        {
+          "name": "Get Moderation Queue (PENDING)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('All reviews are PENDING', () => {",
+                  "  body.reviews.forEach(r => {",
+                  "    pm.expect(r.status).to.equal('PENDING');",
+                  "  });",
+                  "});",
+                  "if (body.reviews && body.reviews.length > 0) {",
+                  "  pm.collectionVariables.set('reviewId', body.reviews[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/reviews/moderation-queue?status=PENDING&page=0&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "reviews", "moderation-queue"],
+              "query": [
+                { "key": "status", "value": "PENDING" },
+                { "key": "page",   "value": "0" },
+                { "key": "size",   "value": "20" }
+              ]
+            },
+            "description": "Returns PENDING reviews sorted by `report_count DESC, created_at ASC` (most reported first — highest risk). The first reviewId found is auto-saved for moderation tests."
+          }
+        },
+        {
+          "name": "Get Moderation Queue (FLAGGED)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "body.reviews.forEach(r => {",
+                  "  pm.test('Review is FLAGGED', () => pm.expect(r.status).to.equal('FLAGGED'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/reviews/moderation-queue?status=FLAGGED&page=0&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "reviews", "moderation-queue"],
+              "query": [
+                { "key": "status", "value": "FLAGGED" },
+                { "key": "page",   "value": "0" },
+                { "key": "size",   "value": "20" }
+              ]
+            },
+            "description": "Returns reviews auto-flagged after reaching 5 reports. These were previously APPROVED and visible, now hidden pending human review."
+          }
+        },
+        {
+          "name": "Approve Review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Status is APPROVED', () => pm.expect(body.status).to.equal('APPROVED'));",
+                  "pm.test('Has moderatedBy', () => pm.expect(body.moderatedBy).to.not.be.null);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"APPROVE\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/admin/reviews/{{reviewId}}/moderate",
+            "description": "Approves a PENDING or FLAGGED review. Effect:\n- `status` → APPROVED\n- `moderatedBy` set to admin's userId\n- If first approval: aggregate (total, average, distribution) is updated"
+          }
+        },
+        {
+          "name": "Reject Review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Status is REJECTED', () => pm.expect(body.status).to.equal('REJECTED'));",
+                  "pm.test('Has rejection reason', () => pm.expect(body.rejectionReason).to.exist);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"REJECT\",\n  \"rejectionReason\": \"Review contains competitor promotional content and affiliate links.\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/admin/reviews/{{reviewId}}/moderate",
+            "description": "Rejects a PENDING or FLAGGED review. `rejectionReason` is required (400 if missing).\n\nIf the review was previously APPROVED (came through FLAGGED path), the aggregate is updated: `total_reviews--`, `average_rating` recalculated, `rating_N_count--`."
+          }
+        },
+        {
+          "name": "Reject Without Reason (400 expected)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"REJECT\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/admin/reviews/{{reviewId}}/moderate",
+            "description": "Verifies that rejecting without a `rejectionReason` returns 400 Bad Request."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health & Observability",
+      "item": [
+        {
+          "name": "Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Service is UP', () => {",
+                  "  pm.expect(pm.response.json().status).to.equal('UP');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/actuator/health",
+            "description": "Spring Boot Actuator health endpoint. Returns `{\"status\":\"UP\"}` when the service, database, and Kafka connections are healthy."
+          }
+        },
+        {
+          "name": "Metrics (Prometheus)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/actuator/metrics",
+            "description": "Lists all available Prometheus metrics exposed by the service."
+          }
+        },
+        {
+          "name": "Liveness Probe",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Liveness is UP', () => {",
+                  "  pm.expect(pm.response.json().status).to.equal('UP');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/actuator/health/liveness",
+            "description": "Used by Kubernetes liveness probe."
+          }
+        },
+        {
+          "name": "Readiness Probe",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Readiness is UP', () => {",
+                  "  pm.expect(pm.response.json().status).to.equal('UP');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/actuator/health/readiness",
+            "description": "Used by Kubernetes readiness probe. DOWN if DB or Kafka is unavailable."
+          }
+        }
+      ]
+    }
+  ]
+}

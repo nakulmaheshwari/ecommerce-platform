@@ -12,7 +12,7 @@ spring:
       server:
         native:
           # Search for configs in the local config-repo folder
-          search-locations: file://${user.dir}/infrastructure/config-repo/
+          search-locations: file:///Users/nakul/Desktop/ecom/ecommerce-platform/infrastructure/config-repo/
 
 eureka:
   instance:
@@ -25,4 +25,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always

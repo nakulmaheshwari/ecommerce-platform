@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; }
+        .header { background: #0f3460; color: white; padding: 30px; text-align: center; }
+        .body { padding: 30px; }
+        .tracking-box { background: #e8f5e9; border-left: 4px solid #4caf50;
+                        border-radius: 4px; padding: 20px; margin: 20px 0; }
+        .tracking-id { font-size: 24px; font-weight: bold; color: #2e7d32; letter-spacing: 2px; }
+        .footer { background: #f8f9fa; padding: 20px; text-align: center; color: #666; font-size: 12px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>Your Order is On the Way!</h1>
+        <p>📦 Shipped and heading to you</p>
+    </div>
+    <div class="body">
+        <p>Your order <strong th:text="${orderId}">ORD-123</strong> has been picked up by our carrier.</p>
+        <div class="tracking-box">
+            <p><strong>Tracking Number:</strong></p>
+            <p class="tracking-id" th:text="${trackingNumber}">TRK-XXXXXXXXXX</p>
+            <p><strong>Carrier:</strong> <span th:text="${carrier}">BlueDart</span></p>
+            <p><strong>Estimated Delivery:</strong>
+               <span th:text="${estimatedDelivery}">2-3 business days</span>
+            </p>
+        </div>
+    </div>
+    <div class="footer">
+        <p>EcomPlatform | Track your shipment with the above number.</p>
+    </div>
+</div>
+</body>
+</html>

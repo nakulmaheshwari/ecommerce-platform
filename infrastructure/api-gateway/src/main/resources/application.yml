@@ -1,6 +1,5 @@
 spring:
   application:
     name: api-gateway
-  # Fetch configuration from config-server on startup
   config:
-    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+    import: "configserver:http://localhost:8888"

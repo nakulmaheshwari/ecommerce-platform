@@ -1,0 +1,24 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  kafka:
+    bootstrap-servers: ${spring.embedded.kafka.brokers}
+  cloud:
+    config:
+      enabled: false
+    discovery:
+      enabled: false
+
+razorpay:
+  key-id: test_key
+  key-secret: test_secret
+  webhook-secret: test_webhook_secret
+
+# Mock annotations for tests if needed or use @MockBean in tests

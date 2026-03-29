@@ -1,0 +1,113 @@
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  scrape_timeout:      10s
+  external_labels:
+    environment: 'local'
+    platform:    'ecommerce'
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+scrape_configs:
+
+  # ─── Prometheus self-monitoring ───
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # ─── API Gateway / Edge ───
+  - job_name: 'api-gateway'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+
+  # ─── Business Services ───
+  - job_name: 'identity-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8081']
+
+  - job_name: 'product-catalog-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8082']
+
+  - job_name: 'inventory-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8083']
+
+  - job_name: 'cart-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8084']
+
+  - job_name: 'order-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8085']
+
+  - job_name: 'payment-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8086']
+
+  - job_name: 'user-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8087']
+
+  - job_name: 'shipping-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8088']
+
+  - job_name: 'review-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8089']
+
+  - job_name: 'search-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8090']
+
+  - job_name: 'notification-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8091']
+
+  # ─── Infrastructure Services ───
+  - job_name: 'config-server'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8888']
+
+  - job_name: 'eureka-server'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8761']
+
+  # ─── Infrastructure Services ───
+  - job_name: 'kafka'
+    static_configs:
+      - targets: ['ecom-kafka:9101']
+    # Kafka JMX metrics via JMX exporter sidecar
+    # Not configured here yet — add in Phase 10 (K8s)
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['ecom-redis:9121']
+    # Redis exporter sidecar — add in Phase 10
+
+  # ─── Kafka Consumer Lag (Critical for Async Services) ───
+  # kafka_exporter exposes consumer group lag as metrics
+  - job_name: 'kafka-exporter'
+    static_configs:
+      - targets: ['kafka-exporter:9308']

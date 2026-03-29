@@ -1,5 +1,5 @@
 server:
-  port: 8082
+  port: 8081
   shutdown: graceful   # Waits for in-flight requests before shutdown
 
 spring:

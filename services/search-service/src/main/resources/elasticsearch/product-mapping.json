@@ -1,0 +1,67 @@
+{
+  "properties": {
+    "id":             { "type": "keyword" },
+    "productId":      { "type": "keyword" },
+    "sku":            { "type": "keyword" },
+
+    "name": {
+      "type": "text",
+      "analyzer": "product_name_analyzer",
+      "fields": {
+        "keyword": { "type": "keyword", "ignore_above": 512 },
+        "autocomplete": {
+          "type": "text",
+          "analyzer": "autocomplete_analyzer",
+          "search_analyzer": "autocomplete_search_analyzer"
+        }
+      }
+    },
+
+    "description": {
+      "type": "text",
+      "analyzer": "product_name_analyzer",
+      "index_options": "offsets"
+    },
+
+    "brand": {
+      "type": "text",
+      "analyzer": "product_name_analyzer",
+      "fields": {
+        "keyword": { "type": "keyword" }
+      }
+    },
+
+    "categoryId":     { "type": "keyword" },
+    "categoryName": {
+      "type": "text",
+      "fields": { "keyword": { "type": "keyword" } }
+    },
+    "categorySlug":   { "type": "keyword" },
+
+    "pricePaise":     { "type": "long" },
+    "priceRupees":    { "type": "double" },
+    "mrpPaise":       { "type": "long" },
+    "discountPercent":{ "type": "integer" },
+
+    "status":         { "type": "keyword" },
+
+    "averageRating":  { "type": "double" },
+    "totalReviews":   { "type": "integer" },
+
+    "tags":           { "type": "keyword" },
+    "attributes":     { "type": "flattened" },
+
+    "primaryImageUrl":{ "type": "keyword", "index": false },
+
+    "popularityScore":{ "type": "double" },
+
+    "inStock":        { "type": "boolean" },
+    "stockQuantity":  { "type": "integer" },
+    "isDigital":      { "type": "boolean" },
+    "warehouseId":    { "type": "keyword" },
+
+    "publishedAt":    { "type": "date" },
+    "indexedAt":      { "type": "date" },
+    "updatedAt":      { "type": "date" }
+  }
+}

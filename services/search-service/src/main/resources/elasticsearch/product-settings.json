@@ -1,0 +1,65 @@
+{
+  "number_of_shards": 1,
+  "number_of_replicas": 0,
+  "analysis": {
+    "analyzer": {
+      "product_name_analyzer": {
+        "type": "custom",
+        "tokenizer": "standard",
+        "filter": [
+          "lowercase",
+          "asciifolding",
+          "product_synonym_filter",
+          "word_delimiter_graph"
+        ]
+      },
+      "autocomplete_analyzer": {
+        "type": "custom",
+        "tokenizer": "standard",
+        "filter": [
+          "lowercase",
+          "asciifolding",
+          "autocomplete_filter"
+        ]
+      },
+      "autocomplete_search_analyzer": {
+        "type": "custom",
+        "tokenizer": "standard",
+        "filter": [
+          "lowercase",
+          "asciifolding"
+        ]
+      },
+      "edge_ngram_analyzer": {
+        "type": "custom",
+        "tokenizer": "edge_ngram_tokenizer",
+        "filter": ["lowercase"]
+      }
+    },
+    "tokenizer": {
+      "edge_ngram_tokenizer": {
+        "type": "edge_ngram",
+        "min_gram": 2,
+        "max_gram": 20,
+        "token_chars": ["letter", "digit"]
+      }
+    },
+    "filter": {
+      "autocomplete_filter": {
+        "type": "edge_ngram",
+        "min_gram": 2,
+        "max_gram": 20
+      },
+      "product_synonym_filter": {
+        "type": "synonym",
+        "synonyms": [
+          "mobile, phone, smartphone",
+          "laptop, notebook, computer",
+          "tv, television, telly",
+          "headphone, earphone, earbud",
+          "shoe, footwear, sneaker"
+        ]
+      }
+    }
+  }
+}
