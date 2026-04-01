@@ -1,4 +1,8 @@
 # Global configuration shared by ALL microservices via Config Server
+spring:
+  profiles:
+    active: dev
+
 eureka:
   instance:
     prefer-ip-address: true
