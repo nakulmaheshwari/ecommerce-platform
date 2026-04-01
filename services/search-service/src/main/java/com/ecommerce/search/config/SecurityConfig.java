@@ -4,11 +4,13 @@ import com.ecommerce.common.security.BaseSecurityConfig;
 import com.ecommerce.common.security.KeycloakJwtConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
+@Profile({"staging", "prod"})
 public class SecurityConfig extends BaseSecurityConfig {
 
     private static final String[] SEARCH_PUBLIC = {"/api/v1/search", "/api/v1/search/**"};

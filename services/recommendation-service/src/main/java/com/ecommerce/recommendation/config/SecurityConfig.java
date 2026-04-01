@@ -9,6 +9,7 @@ import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
 @EnableMethodSecurity
+@Profile({"staging", "prod"})
 public class SecurityConfig extends BaseSecurityConfig {
 
     private static final String[] FULLY_PUBLIC = {
