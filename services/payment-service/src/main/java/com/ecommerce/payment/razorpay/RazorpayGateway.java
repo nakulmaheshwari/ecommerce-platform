@@ -7,6 +7,7 @@ import com.razorpay.RazorpayClient;
 import com.razorpay.RazorpayException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.json.JSONException;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -62,6 +63,12 @@ public class RazorpayGateway {
                 durationMs, e.getMessage());
             throw new ServiceUnavailableException("razorpay",
                 "Failed to create payment order: " + e.getMessage());
+        } catch (Exception e) {
+            long durationMs = System.currentTimeMillis() - startMs;
+            log.error("Unexpected error during Razorpay order creation durationMs={} error={}",
+                durationMs, e.getMessage());
+            throw new ServiceUnavailableException("razorpay",
+                "Internal processing error: " + e.getMessage());
         }
     }
 
@@ -81,6 +88,9 @@ public class RazorpayGateway {
         } catch (RazorpayException e) {
             log.error("Failed to fetch payment razorpayPaymentId={}", razorpayPaymentId, e);
             throw new ServiceUnavailableException("razorpay", e.getMessage());
+        } catch (Exception e) {
+            log.error("Unexpected error fetching Razorpay payment razorpayPaymentId={}", razorpayPaymentId, e);
+            throw new ServiceUnavailableException("razorpay", "Internal processing error: " + e.getMessage());
         }
     }
 

@@ -26,6 +26,10 @@ public class Product {
     @Column(nullable = false)
     private String name;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean available = true;
+
     @Column(nullable = false, unique = true)
     private String slug;
 
@@ -62,6 +66,14 @@ public class Product {
     private Integer weightGrams;
 
     @Column(nullable = false)
+    @Builder.Default
+    private Double averageRating = 0.0;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Integer totalReviews = 0;
+
+    @Column(nullable = false)
     private UUID createdBy;
 
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -90,7 +102,8 @@ public class Product {
 
     // Discount percentage for display
     public int discountPercent() {
-        if (mrpPaise == null || mrpPaise == 0) return 0;
+        if (mrpPaise == null || mrpPaise <= 0 || pricePaise == null) return 0;
+        if (pricePaise >= mrpPaise) return 0;
         return (int) ((mrpPaise - pricePaise) * 100 / mrpPaise);
     }
 }

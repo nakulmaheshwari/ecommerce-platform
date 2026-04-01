@@ -1,4 +1,69 @@
-# Inventory Service — Postman Testing Guide
+# Inventory Service — 360° Testing & Architecture Guide
+
+---
+
+## 1. Architecture & Class Reference
+
+The Inventory Service is a microservice built with Spring Boot, JPA, and Kafka. It follows an event-driven architecture with the **Transactional Outbox pattern** for atomic state changes and reliable event delivery.
+
+### 1.1 Domain Layer (`com.ecommerce.inventory.domain`)
+These classes represent the core data models and business rules.
+
+| Class | Type | Responsibility |
+|---|---|---|
+| `Inventory` | `@Entity` | Main stock record; holds `availableQty` and `reservedQty` per SKU. |
+| `Reservation` | `@Entity` | Tracks stock "on hold" for orders; manages expiration and confirmation status. |
+| `InventoryMovement` | `@Entity` | Audit log for every single stock change (Audit Trail). |
+| `OutboxEvent` | `@Entity` | Stores pending Kafka events in the same DB transaction as stock updates. |
+| `ReservationStatus` | `enum` | Lifecycle of a reservation: `HELD`, `CONFIRMED`, `RELEASED`, `EXPIRED`. |
+
+### 1.2 Service Layer (`com.ecommerce.inventory.service`)
+The business engine of the service.
+
+| Class | Responsibility |
+|---|---|
+| `InventoryService` | Orchestrates stock checks, reservations, adjustments, and reconciliation logic. |
+
+### 1.3 Repository Layer (`com.ecommerce.inventory.repository`)
+Spring Data JPA interfaces for database access.
+
+| Class | Responsibility |
+|---|---|
+| `InventoryRepository` | Queries stock levels and finds low-stock items. |
+| `ReservationRepository` | Manages reservation records by order ID and expiration. |
+| `InventoryMovementRepository` | Accesses the audit trail for a specific SKU. |
+| `OutboxRepository` | Used by the poller to find and publish pending events. |
+
+### 1.4 API Layer (`com.ecommerce.inventory.api`)
+Exposes REST endpoints and manages Data Transfer Objects (DTOs).
+
+| Class | Responsibility |
+|---|---|
+| `InventoryController` | Entry point for REST requests; handles security and HTTP status codes. |
+| `InventoryResponse` | Standard DTO for returning stock status to product pages and clients. |
+| `AvailabilityResponse` | Returns detailed mapping of available/unavailable items in a batch check. |
+| `AddStockRequest` | Validates incoming stock adjustment data (quantity, notes). |
+| `ReservationResult` | Internal record of the success/failure of a stock reservation batch. |
+
+### 1.5 Event Layer (`com.ecommerce.inventory.event`)
+Handles asynchronous communication with other services via Kafka.
+
+| Class | Package | Responsibility |
+|---|---|---|
+| `OrderEventConsumer` | `.consumer` | Listens to `order-placed`, `payment-succeeded`, etc. to trigger stock changes. |
+| `ProductEventConsumer` | `.consumer` | Listens to `product-created` to auto-initialize empty inventory records. |
+| `OutboxPoller` | `.producer` | A scheduled job that reads `outbox_events` and publishes them to Kafka topics. |
+| `ReservationExpiryJob` | `.producer` | A scheduled job that identifies and releases stale reservations. |
+
+### 1.6 Configuration Layer (`com.ecommerce.inventory.config`)
+Infrastructure setup and security boilerplate.
+
+| Class | Responsibility |
+|---|---|
+| `KafkaConfig` | Sets up Kafka producers/consumers, serializers, and topic naming. |
+| `SecurityConfig` | Defines public vs. private endpoints and Keycloak role-based access control. |
+
+---
 
 **Base URL:** `http://localhost:8083`  
 **Port:** 8083  
@@ -240,17 +305,44 @@ pm.test("Stock increased", () => {
 
 ---
 
-## 4. Health Check
+## 4. Internal State Discovery (Admin Only)
+
+These endpoints are designed for "360-degree" verification of the system's internal state. They allow you to confirm that async flows (Kafka) have executed correctly without direct database access.
+
+### 4.1 Get Movement History
+Returns the audit log of all stock changes for a specific SKU.
 ```
-GET {{base_url_inventory}}/actuator/health
+GET {{base_url_inventory}}/api/v1/inventory/{{testSku}}/movements
+Authorization: Bearer {{adminToken}}
 ```
-```json
-{ "status": "UP", "components": { "db": { "status": "UP" } } }
+
+### 4.2 Get Order Reservations
+Returns all items held for a specific order.
+```
+GET {{base_url_inventory}}/api/v1/inventory/reservations/order/{{orderId}}
+Authorization: Bearer {{adminToken}}
+```
+
+### 4.3 Get Low Stock Items
+Returns all SKUs currently at or below their reorder threshold.
+```
+GET {{base_url_inventory}}/api/v1/inventory/low-stock
+Authorization: Bearer {{adminToken}}
 ```
 
 ---
 
-## 5. Kafka-Driven Operations (Observe via DB)
+## 5. Health & Monitoring
+```
+GET {{base_url_inventory}}/actuator/health
+```
+```json
+{ "status": "UP", "components": { "db": { "status": "UP" }, "kafka": { "status": "UP" } } }
+```
+
+---
+
+## 6. 360° Testing Scenarios
 
 The following operations are **not REST endpoints** — they're triggered by Kafka events and run automatically. Observe their effects via the database.
 

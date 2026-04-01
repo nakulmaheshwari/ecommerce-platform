@@ -1,9 +1,14 @@
 package com.ecommerce.cart.service;
 
-import com.ecommerce.cart.api.dto.*;
+import com.ecommerce.cart.api.dto.AddToCartRequest;
+import com.ecommerce.cart.api.dto.CartResponse;
+import com.ecommerce.cart.api.dto.UpdateCartItemRequest;
+import com.ecommerce.cart.client.InventoryClient;
 import com.ecommerce.cart.client.ProductCatalogClient;
+import com.ecommerce.cart.client.dto.InventoryDto;
 import com.ecommerce.cart.client.dto.ProductDto;
 import com.ecommerce.cart.domain.*;
+import com.ecommerce.common.exception.InsufficientStockException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,27 +25,40 @@ public class CartService {
 
     private final CartRepository cartRepository;
     private final ProductCatalogClient productCatalogClient;
+    private final InventoryClient inventoryClient;
 
     /**
      * Add item to cart.
      *
      * Flow:
      * 1. Fetch product from catalog (validates it exists and is ACTIVE)
-     * 2. Check if item already in cart (update qty vs new item)
-     * 3. Build snapshot from product data
-     * 4. Store in Redis Hash
-     *
-     * Why we fetch from Product Catalog and not trust client data:
-     * Security. A client could send pricePaise=1 to get any item for ₹0.01.
-     * Always fetch price from the trusted service.
+     * 2. Perform soft availability check via Inventory Service
+     * 3. Check if item already in cart (update qty vs new item)
+     * 4. Build snapshot from product data
+     * 5. Store in Redis Hash
      */
     public CartResponse addItem(UUID userId, AddToCartRequest request) {
-        // Fetch live product data — this call is circuit-breaker protected
+        // Fetch live product data
         ProductDto product = productCatalogClient.getProductBySku(request.skuId());
 
         if (!"ACTIVE".equals(product.status())) {
-            throw new IllegalStateException(
-                "Product is not available: " + request.skuId());
+            throw new IllegalStateException("Product is not available: " + request.skuId());
+        }
+
+        // --- NEW: Soft Availability Check ---
+        InventoryDto inventory = inventoryClient.getInventory(request.skuId());
+        
+        // Check if item already exists to calculate total requested qty
+        int currentInCart = cartRepository.getItem(userId, request.skuId())
+                .map(CartItem::getQuantity)
+                .orElse(0);
+        
+        int totalRequested = currentInCart + request.quantity();
+        
+        if (inventory.outOfStock() || inventory.availableQty() < totalRequested) {
+            log.warn("Soft check failed for SKU {}: requested={}, available={}", 
+                request.skuId(), totalRequested, inventory.availableQty());
+            throw new InsufficientStockException(request.skuId());
         }
 
         // Find the matching variant
@@ -54,15 +72,12 @@ public class CartService {
 
         CartItem item;
         if (existing.isPresent()) {
-            // Update quantity — keep original addedAt timestamp
             item = existing.get();
             item.setQuantity(item.getQuantity() + request.quantity());
             item.setUpdatedAt(Instant.now());
-            // Re-snapshot the price — if price dropped since last add, customer benefits
             item.setPricePaise(pricePaise);
             item.setMrpPaise(product.mrpPaise());
         } else {
-            // New item — full snapshot
             item = CartItem.builder()
                 .skuId(request.skuId())
                 .productId(product.id())
@@ -88,17 +103,20 @@ public class CartService {
 
     /**
      * Update item quantity.
-     * quantity = 0 removes the item entirely.
-     * This matches the UX pattern of a quantity stepper that goes to 0 = remove.
      */
     public CartResponse updateItem(UUID userId, String skuId, UpdateCartItemRequest request) {
         if (request.quantity() == 0) {
             return removeItem(userId, skuId);
         }
 
+        // Verify stock for update
+        InventoryDto inventory = inventoryClient.getInventory(skuId);
+        if (inventory.outOfStock() || inventory.availableQty() < request.quantity()) {
+            throw new InsufficientStockException(skuId);
+        }
+
         CartItem existing = cartRepository.getItem(userId, skuId)
-            .orElseThrow(() ->
-                new ResourceNotFoundException("CartItem", skuId));
+            .orElseThrow(() -> new ResourceNotFoundException("CartItem", skuId));
 
         existing.setQuantity(request.quantity());
         existing.setUpdatedAt(Instant.now());

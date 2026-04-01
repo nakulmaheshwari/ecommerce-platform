@@ -14,6 +14,12 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Kafka Consumer for events related to the Order Lifecycle.
+ * 
+ * This class coordinates the physical stock "locking" mechanism in response to 
+ * business events from the Order and Payment services.
+ */
 @Component
 @RequiredArgsConstructor
 @Slf4j
@@ -22,6 +28,13 @@ public class OrderEventConsumer {
     private final InventoryService inventoryService;
     private final ObjectMapper objectMapper;
 
+    /**
+     * Responds to new orders being placed in the system.
+     * Transitions stock from the 'available' pool to the 'reserved' pool.
+     * 
+     * Topic: order-placed
+     * Producer: order-service
+     */
     @KafkaListener(
         topics = "order-placed",
         groupId = "inventory-service-group",
@@ -33,9 +46,8 @@ public class OrderEventConsumer {
             JsonNode payload = objectMapper.readTree(record.value());
             orderId = payload.get("orderId").asText();
 
-            log.info("Processing order-placed event orderId={}", orderId);
+            log.info("Received order-placed for orderId={}. Attempting reservation...", orderId);
 
-            // Build sku -> quantity map from the event payload
             Map<String, Integer> skuQty = new HashMap<>();
             payload.get("items").forEach(item ->
                 skuQty.put(
@@ -44,16 +56,24 @@ public class OrderEventConsumer {
                 )
             );
 
+            // Attempt to hold the stock
             inventoryService.reserveStock(UUID.fromString(orderId), skuQty);
-            ack.acknowledge(); // Commit offset ONLY after successful processing
+            
+            // Commit offsets so this message isn't processed again
+            ack.acknowledge(); 
 
         } catch (Exception e) {
-            log.error("Failed to process order-placed event orderId={}", orderId, e);
-            // Do NOT acknowledge — message will be redelivered
-            // After max retries, Spring Kafka sends to DLQ automatically
+            log.error("Failed to process order-placed event orderId={}. Cause: {}", orderId, e.getMessage());
+            // DO NOT ACK - This will trigger Kafka's retry mechanism (configured in KafkaConfig)
         }
     }
 
+    /**
+     * Finalizes the inventory removal once payment is confirmed.
+     * 
+     * Topic: payment-succeeded
+     * Producer: payment-service
+     */
     @KafkaListener(
         topics = "payment-succeeded",
         groupId = "inventory-service-group",
@@ -64,7 +84,7 @@ public class OrderEventConsumer {
             JsonNode payload = objectMapper.readTree(record.value());
             UUID orderId = UUID.fromString(payload.get("orderId").asText());
 
-            log.info("Confirming inventory for orderId={}", orderId);
+            log.info("Payment success for order {}. Confirming reservations.", orderId);
             inventoryService.confirmOrderReservations(orderId);
             ack.acknowledge();
 
@@ -73,6 +93,12 @@ public class OrderEventConsumer {
         }
     }
 
+    /**
+     * Returns reserved stock to the available pool if payment fails.
+     * 
+     * Topic: payment-failed
+     * Producer: payment-service
+     */
     @KafkaListener(
         topics = "payment-failed",
         groupId = "inventory-service-group",
@@ -83,7 +109,7 @@ public class OrderEventConsumer {
             JsonNode payload = objectMapper.readTree(record.value());
             UUID orderId = UUID.fromString(payload.get("orderId").asText());
 
-            log.info("Releasing inventory for orderId={} reason=payment-failed", orderId);
+            log.info("Payment failed for order {}. Releasing reserved stock.", orderId);
             inventoryService.releaseOrderReservations(orderId);
             ack.acknowledge();
 
@@ -92,14 +118,17 @@ public class OrderEventConsumer {
         }
     }
 
-    // DLQ handler — alert fires when messages land here
+    /**
+     * Safety net for messages that cannot be processed after multiple retries.
+     * These messages are routed to topics ending in '.DLQ'.
+     */
     @KafkaListener(
         topics = {"order-placed.DLQ", "payment-succeeded.DLQ", "payment-failed.DLQ"},
         groupId = "inventory-service-dlq-group"
     )
     public void handleDlq(ConsumerRecord<String, String> record) {
-        log.error("DLQ message received topic={} key={} value={}",
+        log.error("CRITICAL: Message landed in Inventory DLQ. Topic={} Key={} Value={}",
             record.topic(), record.key(), record.value());
-        // In production: alert PagerDuty, write to dead-letter DB table for manual review
+        // Potential action: Write to a specialized 'DeadLetter' table for manual intervention.
     }
 }

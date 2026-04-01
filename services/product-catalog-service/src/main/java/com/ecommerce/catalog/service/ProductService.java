@@ -6,8 +6,8 @@ import com.ecommerce.catalog.mapper.ProductMapper;
 import com.ecommerce.catalog.repository.*;
 import com.ecommerce.common.exception.DuplicateResourceException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
@@ -16,13 +16,13 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class ProductService {
 
@@ -30,6 +30,18 @@ public class ProductService {
     private final CategoryRepository categoryRepository;
     private final OutboxRepository outboxRepository;
     private final ProductMapper productMapper;
+
+    @Autowired
+    public ProductService(
+            ProductRepository productRepository,
+            CategoryRepository categoryRepository,
+            OutboxRepository outboxRepository,
+            ProductMapper productMapper) {
+        this.productRepository = productRepository;
+        this.categoryRepository = categoryRepository;
+        this.outboxRepository = outboxRepository;
+        this.productMapper = productMapper;
+    }
 
     // ─────────────────────────────────────────────
     // READ OPERATIONS — cached in Redis
@@ -55,6 +67,15 @@ public class ProductService {
         log.debug("Cache MISS for product slug={}", slug);
         Product product = productRepository.findActiveBySlugWithDetails(slug)
             .orElseThrow(() -> new ResourceNotFoundException("Product", slug));
+        return productMapper.toResponse(product);
+    }
+
+    @Cacheable(value = "products", key = "'sku:' + #sku")
+    @Transactional(readOnly = true)
+    public ProductResponse getBySku(String sku) {
+        log.debug("Cache MISS for product sku={}", sku);
+        Product product = productRepository.findActiveBySkuOrVariantSku(sku)
+            .orElseThrow(() -> new ResourceNotFoundException("Product", sku));
         return productMapper.toResponse(product);
     }
 
@@ -176,18 +197,30 @@ public class ProductService {
 
         productRepository.save(product);
 
-        // Outbox event — same transaction
+        // Outbox event — enriched for Search Service
+        Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("productId",       product.getId().toString());
+        payload.put("sku",             product.getSku());
+        payload.put("name",            product.getName());
+        payload.put("description",     product.getDescription() != null ? product.getDescription() : "");
+        payload.put("brand",           product.getBrand() != null ? product.getBrand() : "");
+        payload.put("categoryId",      category.getId().toString());
+        payload.put("categoryName",    category.getName());
+        payload.put("categorySlug",    category.getSlug());
+        payload.put("pricePaise",      product.getPricePaise());
+        payload.put("mrpPaise",        product.getMrpPaise());
+        payload.put("discountPercent", product.discountPercent());
+        payload.put("status",          product.getStatus().name());
+        payload.put("primaryImageUrl", product.getImages().isEmpty() ? "" : product.getImages().get(0).getUrl());
+        payload.put("isDigital",       product.getIsDigital());
+        payload.put("averageRating",   product.getAverageRating());
+        payload.put("totalReviews",    product.getTotalReviews());
+
         outboxRepository.save(OutboxEvent.builder()
             .aggregateType("Product")
             .aggregateId(product.getId())
             .eventType("product.created")
-            .payload(Map.of(
-                "productId",  product.getId().toString(),
-                "sku",        product.getSku(),
-                "name",       product.getName(),
-                "categoryId", category.getId().toString(),
-                "pricePaise", product.getPricePaise()
-            ))
+            .payload(payload)
             .build());
 
         log.info("Product created productId={} sku={}", product.getId(), product.getSku());
@@ -203,19 +236,60 @@ public class ProductService {
         product.publish();
         productRepository.save(product);
 
+        Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("productId",       product.getId().toString());
+        payload.put("sku",             product.getSku());
+        payload.put("name",            product.getName());
+        payload.put("description",     product.getDescription() != null ? product.getDescription() : "");
+        payload.put("brand",           product.getBrand() != null ? product.getBrand() : "");
+        payload.put("categoryId",      product.getCategory().getId().toString());
+        payload.put("categoryName",    product.getCategory().getName());
+        payload.put("categorySlug",    product.getCategory().getSlug());
+        payload.put("pricePaise",      product.getPricePaise());
+        payload.put("mrpPaise",        product.getMrpPaise());
+        payload.put("discountPercent", product.discountPercent());
+        payload.put("status",          product.getStatus().name());
+        payload.put("primaryImageUrl", product.getImages().isEmpty() ? "" : product.getImages().get(0).getUrl());
+        payload.put("isDigital",       product.getIsDigital());
+        payload.put("averageRating",   product.getAverageRating());
+        payload.put("totalReviews",    product.getTotalReviews());
+
         outboxRepository.save(OutboxEvent.builder()
             .aggregateType("Product")
             .aggregateId(product.getId())
             .eventType("product.published")
-            .payload(Map.of(
-                "productId", product.getId().toString(),
-                "sku",       product.getSku(),
-                "name",      product.getName()
-            ))
+            .payload(payload)
             .build());
 
         log.info("Product published productId={}", productId);
         return productMapper.toResponse(product);
+    }
+    @Transactional
+    @CacheEvict(value = "products", key = "#productId")
+    public void updateRating(UUID productId, int newRating) {
+        Product product = productRepository.findById(productId)
+            .orElseThrow(() -> new ResourceNotFoundException("Product", productId.toString()));
+
+        double oldTotal = product.getAverageRating() * product.getTotalReviews();
+        product.setTotalReviews(product.getTotalReviews() + 1);
+        product.setAverageRating((oldTotal + newRating) / product.getTotalReviews());
+
+        productRepository.save(product);
+
+        // Also update search index via outbox
+        outboxRepository.save(OutboxEvent.builder()
+            .aggregateType("Product")
+            .aggregateId(product.getId())
+            .eventType("product.updated")
+            .payload(Map.of(
+                "productId",  product.getId().toString(),
+                "averageRating", product.getAverageRating(),
+                "totalReviews",  product.getTotalReviews()
+            ))
+            .build());
+
+        log.info("Product rating updated productId={} avg={} total={}",
+            productId, product.getAverageRating(), product.getTotalReviews());
     }
 
     // ─────────────────────────────────────────────

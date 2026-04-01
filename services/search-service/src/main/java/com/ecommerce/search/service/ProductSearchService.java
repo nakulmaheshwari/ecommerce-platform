@@ -228,6 +228,23 @@ public class ProductSearchService {
         elasticsearchClient.update(u -> u.index("products").id(productId).doc(Map.of("inStock", inStock, "stockQuantity", stockQuantity, "updatedAt", Instant.now().toString())), ProductDocument.class);
     }
 
+    public void updateProductPartial(String productId, Map<String, Object> updates) throws IOException {
+        Map<String, Object> fields = new HashMap<>(updates);
+        fields.put("updatedAt", Instant.now().toString());
+        
+        // Recalculate popularity score if ratings changed
+        if (updates.containsKey("averageRating") || updates.containsKey("totalReviews")) {
+            Double rating = updates.containsKey("averageRating") ? ((Number) updates.get("averageRating")).doubleValue() : null;
+            Integer reviews = updates.containsKey("totalReviews") ? ((Number) updates.get("totalReviews")).intValue() : null;
+            // Note: In a real production system we'd fetch the document first or use a script to increment
+            if (rating != null && reviews != null) {
+                fields.put("popularityScore", computePopularityScore(reviews, rating));
+            }
+        }
+
+        elasticsearchClient.update(u -> u.index("products").id(productId).doc(fields), ProductDocument.class);
+    }
+
     public void removeProduct(String productId) {
         searchRepository.deleteByProductId(productId);
     }

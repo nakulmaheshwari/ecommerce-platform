@@ -39,7 +39,20 @@ public class ProductEventConsumer {
     public void handleProductUpdated(ConsumerRecord<String, String> record, Acknowledgment ack) {
         try {
             JsonNode payload = objectMapper.readTree(record.value());
-            searchService.indexProduct(buildIndexRequest(payload));
+            String productId = payload.path("productId").asText();
+            
+            // If it's a full update (has name/sku), use indexProduct. Otherwise use partial.
+            if (payload.has("name") || payload.has("sku")) {
+                searchService.indexProduct(buildIndexRequest(payload));
+            } else {
+                Map<String, Object> updates = new HashMap<>();
+                payload.fields().forEachRemaining(entry -> {
+                    if (!entry.getKey().equals("productId")) {
+                        updates.put(entry.getKey(), entry.getValue().isNumber() ? entry.getValue().numberValue() : entry.getValue().asText());
+                    }
+                });
+                searchService.updateProductPartial(productId, updates);
+            }
             ack.acknowledge();
         } catch (Exception e) {
             log.error("Failed to update product index", e);

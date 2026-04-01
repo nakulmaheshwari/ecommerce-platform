@@ -6,10 +6,7 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-@SpringBootApplication(scanBasePackages = {
-    "com.ecommerce.review",
-    "com.ecommerce.common"
-})
+@SpringBootApplication
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = "com.ecommerce.review.client")
 @EnableScheduling

@@ -1,85 +1,81 @@
 {
   "info": {
-    "name": "Inventory Service",
-    "_postman_id": "inventory-service-v1",
-    "description": "End-to-end collection for the Inventory Service (port 8083).\n\nSet the `baseUrl` variable to `http://localhost:8083` and `adminToken` to a valid Keycloak JWT with ADMIN role before running.",
+    "name": "Inventory Service 360°",
+    "_postman_id": "inventory-service-360-v2",
+    "description": "Comprehensive 360-degree testing suite for Inventory Service.\nContains a Step-by-Step Lifecycle Test that automatically verifies everything from health to audit trails.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl",    "value": "http://localhost:8083",          "type": "string" },
-    { "key": "gatewayUrl", "value": "http://localhost:8080",          "type": "string" },
     { "key": "adminToken", "value": "REPLACE_WITH_ADMIN_JWT",         "type": "string" },
-    { "key": "testSku",    "value": "APP-IPH15-256GB-BLK",            "type": "string" }
+    { "key": "testSku",    "value": "APP-IPH15-256GB-BLK",            "type": "string" },
+    { "key": "orderId",    "value": "550e8400-e29b-41d4-a716-446655440000", "type": "string" },
+    { "key": "capturedStock", "value": "0",                          "type": "string" }
   ],
   "item": [
     {
-      "name": "📦 Inventory API",
+      "name": "🚀 Step-by-Step Lifecycle Test (SYSTEM)",
+      "description": "Run this folder using the Collection Runner to verify the entire service logic in one go.",
       "item": [
         {
-          "name": "Get Inventory by SKU",
+          "name": "1. Health Verification",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"System is UP\", () => {",
+                  "    const j = pm.response.json();",
+                  "    pm.expect(j.status).to.equal(\"UP\");",
+                  "    pm.expect(j.components.db.status).to.equal(\"UP\");",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/inventory/{{testSku}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "inventory", "{{testSku}}"]
-            },
-            "description": "Returns current stock levels (available, reserved, total) for a single SKU.\nNo auth required — publicly visible on product pages."
-          },
-          "response": [
-            {
-              "name": "200 OK — In Stock",
-              "status": "OK",
-              "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"skuId\": \"APP-IPH15-256GB-BLK\",\n  \"productId\": \"e6e64c99-7371-40b4-bcdb-a2375a4c133b\",\n  \"availableQty\": 50,\n  \"reservedQty\": 5,\n  \"totalQty\": 55,\n  \"lowStock\": false,\n  \"outOfStock\": false,\n  \"warehouseId\": \"WH-MAIN\",\n  \"updatedAt\": \"2026-03-29T13:30:00Z\"\n}"
-            },
-            {
-              "name": "404 Not Found",
-              "status": "Not Found",
-              "code": 404,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"status\": 404,\n  \"error\": \"Not Found\",\n  \"message\": \"Inventory not found for sku: APP-IPH15-256GB-BLK\"\n}"
-            }
-          ]
+            "url": "{{baseUrl}}/actuator/health"
+          }
         },
         {
-          "name": "Check Multi-SKU Availability",
+          "name": "2. Capture Initial Stock State",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Capture successful\", () => {",
+                  "    const j = pm.response.json();",
+                  "    pm.environment.set(\"capturedStock\", j.availableQty);",
+                  "    console.log(\"Captured Initial Stock:\", j.availableQty);",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"APP-IPH15-256GB-BLK\": 2,\n  \"APP-IPH15-128GB-WHT\": 1\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/inventory/availability",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "inventory", "availability"]
-            },
-            "description": "Synchronous availability check called by Order Service before creating an order.\nBody is a map of { skuId → requestedQuantity }.\nReturns whether ALL requested items are available plus per-SKU qty detail."
-          },
-          "response": [
-            {
-              "name": "200 OK — All Available",
-              "status": "OK",
-              "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"available\": true,\n  \"unavailableSkus\": [],\n  \"availableQuantities\": {\n    \"APP-IPH15-256GB-BLK\": 50,\n    \"APP-IPH15-128GB-WHT\": 10\n  }\n}"
-            },
-            {
-              "name": "200 OK — Partially Unavailable",
-              "status": "OK",
-              "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"available\": false,\n  \"unavailableSkus\": [\"APP-IPH15-256GB-BLK\"],\n  \"availableQuantities\": {\n    \"APP-IPH15-256GB-BLK\": 0,\n    \"APP-IPH15-128GB-WHT\": 10\n  }\n}"
-            }
-          ]
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/inventory/{{testSku}}"
+          }
         },
         {
-          "name": "Add Stock (Admin)",
+          "name": "3. Add 100 Units (Inbound Supply)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Add stock successful\", () => {",
+                  "    const j = pm.response.json();",
+                  "    const initial = parseInt(pm.environment.get(\"capturedStock\"));",
+                  "    pm.expect(j.availableQty).to.equal(initial + 100);",
+                  "    console.log(\"New Stock Level:\", j.availableQty);",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -88,139 +84,80 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"quantity\": 100,\n  \"notes\": \"PO-2026-001 — March restock from supplier\"\n}",
+              "raw": "{\n  \"quantity\": 100,\n  \"notes\": \"SYSTEM TEST — Automated Restock\"\n}",
               "options": { "raw": { "language": "json" } }
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/inventory/{{testSku}}/add-stock",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "inventory", "{{testSku}}", "add-stock"]
-            },
-            "description": "Admin-only endpoint to receive goods from warehouse.\nRequires ADMIN role JWT. Increments available_qty and records an INBOUND movement."
-          },
-          "response": [
+            "url": "{{baseUrl}}/api/v1/inventory/{{testSku}}/add-stock"
+          }
+        },
+        {
+          "name": "4. Verify Audit Movement",
+          "event": [
             {
-              "name": "200 OK",
-              "status": "OK",
-              "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"skuId\": \"APP-IPH15-256GB-BLK\",\n  \"productId\": \"e6e64c99-7371-40b4-bcdb-a2375a4c133b\",\n  \"availableQty\": 150,\n  \"reservedQty\": 5,\n  \"totalQty\": 155,\n  \"lowStock\": false,\n  \"outOfStock\": false,\n  \"warehouseId\": \"WH-MAIN\",\n  \"updatedAt\": \"2026-03-29T13:35:00Z\"\n}"
-            },
-            {
-              "name": "400 Bad Request — validation failure",
-              "status": "Bad Request",
-              "code": 400,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"status\": 400,\n  \"errors\": {\n    \"quantity\": \"must be greater than or equal to 1\",\n    \"notes\": \"must not be blank\"\n  }\n}"
-            },
-            {
-              "name": "403 Forbidden — not admin",
-              "status": "Forbidden",
-              "code": 403,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"status\": 403,\n  \"error\": \"Forbidden\"\n}"
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Audit movement recorded\", () => {",
+                  "    const j = pm.response.json();",
+                  "    const lastMove = j[0];",
+                  "    pm.expect(lastMove.movementType).to.equal(\"INBOUND\");",
+                  "    pm.expect(lastMove.quantityDelta).to.equal(100);",
+                  "    pm.expect(lastMove.notes).to.include(\"SYSTEM TEST\");",
+                  "});"
+                ]
+              }
             }
-          ]
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/api/v1/inventory/{{testSku}}/movements"
+          }
+        },
+        {
+          "name": "5. Simulation: Low Stock Alert Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Low stock endpoint operational\", () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json()).to.be.an(\"array\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/api/v1/inventory/low-stock"
+          }
         }
       ]
     },
     {
-      "name": "🔔 Event-Driven Flows (Read-Only Context)",
-      "description": "These flows are triggered via Kafka events — not directly callable via REST. Listed here for documentation and manual trigger reference.",
+      "name": "Individual Endpoints (Manual)",
       "item": [
         {
-          "name": "[EVENT] product.created → initializeStock",
+          "name": "Get Inventory by SKU",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/inventory/{{testSku}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "inventory", "{{testSku}}"]
-            },
-            "description": "After a product is created in Catalog Service, the product.created Kafka event causes Inventory to auto-initialize a zero-stock record.\n\nVerify it by calling GET /api/v1/inventory/{sku} — you should see availableQty: 0 even though you never manually added stock.\n\nKafka topic: product-created\nConsumer: ProductEventConsumer → InventoryService.initializeStock()"
-          },
-          "response": [
-            {
-              "name": "200 OK — Auto-initialized by event",
-              "status": "OK",
-              "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"skuId\": \"NEW-PRODUCT-SKU-001\",\n  \"productId\": \"<uuid-from-catalog>\",\n  \"availableQty\": 0,\n  \"reservedQty\": 0,\n  \"totalQty\": 0,\n  \"lowStock\": true,\n  \"outOfStock\": true,\n  \"warehouseId\": \"WH-MAIN\",\n  \"updatedAt\": \"2026-03-29T13:30:00Z\"\n}"
-            }
-          ]
+            "url": "{{baseUrl}}/api/v1/inventory/{{testSku}}"
+          }
         },
         {
-          "name": "[EVENT] order.placed → reserveStock",
+          "name": "Availability Check (Batch)",
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"APP-IPH15-256GB-BLK\": 2\n}",
-              "options": { "raw": { "language": "json" } }
+              "raw": "{\n  \"{{testSku}}\": 1\n}"
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/inventory/availability",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "inventory", "availability"]
-            },
-            "description": "The reserveStock flow is triggered by the Kafka topic 'order-placed'.\nUse the availability check endpoint to see stock *before* placing an order.\nAfter placing an order via Order Service, reserved_qty should increase."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "🩺 Actuator",
-      "item": [
-        {
-          "name": "Health",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/actuator/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["actuator", "health"]
-            },
-            "description": "Returns service health including DB and Kafka connectivity."
-          },
-          "response": [
-            {
-              "name": "200 UP",
-              "status": "OK",
-              "code": 200,
-              "body": "{\n  \"status\": \"UP\",\n  \"components\": {\n    \"db\": { \"status\": \"UP\" },\n    \"kafka\": { \"status\": \"UP\" },\n    \"diskSpace\": { \"status\": \"UP\" }\n  }\n}"
-            }
-          ]
-        },
-        {
-          "name": "Prometheus Metrics",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/actuator/prometheus",
-              "host": ["{{baseUrl}}"],
-              "path": ["actuator", "prometheus"]
-            },
-            "description": "Scraped by Prometheus every 15s. Contains http_server_requests_seconds, jvm_*, hikaricp_*, kafka_consumer_* metrics."
-          },
-          "response": []
-        },
-        {
-          "name": "Info",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/actuator/info",
-              "host": ["{{baseUrl}}"],
-              "path": ["actuator", "info"]
-            }
-          },
-          "response": []
+            "url": "{{baseUrl}}/api/v1/inventory/availability"
+          }
         }
       ]
     }

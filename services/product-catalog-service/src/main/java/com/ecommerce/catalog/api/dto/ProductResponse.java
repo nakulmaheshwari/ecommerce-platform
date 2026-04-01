@@ -25,6 +25,7 @@ public record ProductResponse(
     int discountPercent,
     BigDecimal taxPercent,
     String status,
+    boolean available,
     List<VariantResponse> variants,
     List<ImageResponse> images,
     Instant publishedAt

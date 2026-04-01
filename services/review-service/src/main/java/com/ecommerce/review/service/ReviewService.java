@@ -4,6 +4,7 @@ import com.ecommerce.common.exception.DuplicateResourceException;
 import com.ecommerce.common.exception.ResourceNotFoundException;
 import com.ecommerce.review.api.dto.*;
 import com.ecommerce.review.client.OrderServiceClient;
+import com.ecommerce.review.client.ProductCatalogClient;
 import com.ecommerce.review.domain.*;
 import com.ecommerce.review.mapper.ReviewMapper;
 import com.ecommerce.review.repository.*;
@@ -30,6 +31,7 @@ public class ReviewService {
     private final ReviewReportRepository reportRepository;
     private final OutboxRepository outboxRepository;
     private final OrderServiceClient orderServiceClient;
+    private final ProductCatalogClient productCatalogClient;
     private final ReviewMapper reviewMapper;
 
     // ─────────────────────────────────────────────────────────────────
@@ -58,6 +60,17 @@ public class ReviewService {
             throw new DuplicateResourceException(
                 "Review", "product+user",
                 request.productId() + "+" + userId);
+        }
+
+        // ── Guard: Verify product exists (Catalog Service) ──
+        try {
+            if (productCatalogClient.getProduct(request.productId()) == null) {
+                // If fallback returns null or explicit 404
+                throw new ResourceNotFoundException("Product", request.productId().toString());
+            }
+        } catch (Exception e) {
+            log.error("Failed to validate productId={}", request.productId(), e);
+            throw new ResourceNotFoundException("Product", request.productId().toString());
         }
 
         // ── Check verified purchase (falls back to false on outage) ──

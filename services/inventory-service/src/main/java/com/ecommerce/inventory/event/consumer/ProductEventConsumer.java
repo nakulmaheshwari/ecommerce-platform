@@ -12,6 +12,12 @@ import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 
+/**
+ * Kafka Consumer for events related to the Product Lifecycle.
+ * 
+ * Ensures that the Inventory service is always in sync with the Product Catalog 
+ * as new items are added to the store.
+ */
 @Component
 @RequiredArgsConstructor
 @Slf4j
@@ -26,7 +32,7 @@ public class ProductEventConsumer {
      * so the reservation flow works from day one.
      *
      * Topic: product-created
-     * Producer: product-catalog-service OutboxPoller
+     * Producer: product-catalog-service
      * Payload: { productId, sku, name, categoryId, pricePaise }
      */
     @KafkaListener(
@@ -43,24 +49,27 @@ public class ProductEventConsumer {
 
             log.info("Processing product.created event productId={} sku={}", productId, sku);
 
+            // Create placeholder record with 0 stock
             inventoryService.initializeStock(productId, sku);
+            
+            // Mark as processed
             ack.acknowledge();
 
-            log.info("Initialized inventory for sku={}", sku);
         } catch (Exception e) {
-            log.error("Failed to process product.created event sku={}", sku, e);
-            // Do NOT ack — Spring Kafka will retry (3x), then route to DLQ
+            log.error("Failed to process product.created event sku={}. Cause: {}", sku, e.getMessage());
+            // DO NOT ACK - Spring Kafka will retry based on BackOff policy
         }
     }
 
-    // Catch messages that failed all retries
+    /**
+     * Dead Letter Queue for failed product creation events.
+     */
     @KafkaListener(
         topics = "product-created.DLQ",
         groupId = "inventory-service-dlq-group"
     )
     public void handleDlq(ConsumerRecord<String, String> record) {
-        log.error("DLQ: product.created message could not be processed topic={} key={} value={}",
+        log.error("CRITICAL: product.created message could not be processed after retries. Topic={} Key={} Value={}",
             record.topic(), record.key(), record.value());
-        // In production: alert/write to a dead-letter tracking table here
     }
 }

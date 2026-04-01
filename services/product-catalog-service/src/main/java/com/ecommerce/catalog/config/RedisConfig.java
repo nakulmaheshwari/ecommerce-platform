@@ -22,6 +22,26 @@ import java.util.Map;
 @EnableCaching
 public class RedisConfig {
 
+    @Bean
+    public org.springframework.data.redis.core.RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
+        org.springframework.data.redis.core.RedisTemplate<String, Object> template = new org.springframework.data.redis.core.RedisTemplate<>();
+        template.setConnectionFactory(connectionFactory);
+        template.setKeySerializer(new StringRedisSerializer());
+        template.setHashKeySerializer(new StringRedisSerializer());
+        
+        ObjectMapper mapper = redisObjectMapper();
+        mapper.activateDefaultTyping(
+            mapper.getPolymorphicTypeValidator(),
+            ObjectMapper.DefaultTyping.EVERYTHING,
+            JsonTypeInfo.As.PROPERTY
+        );
+        GenericJackson2JsonRedisSerializer serializer = new GenericJackson2JsonRedisSerializer(mapper);
+        
+        template.setValueSerializer(serializer);
+        template.setHashValueSerializer(serializer);
+        return template;
+    }
+
     private ObjectMapper redisObjectMapper() {
         return new ObjectMapper()
             .registerModule(new JavaTimeModule())

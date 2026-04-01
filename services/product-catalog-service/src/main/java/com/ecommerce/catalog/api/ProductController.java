@@ -32,6 +32,11 @@ public class ProductController {
         return ResponseEntity.ok(productService.getBySlug(slug));
     }
 
+    @GetMapping("/products/sku/{sku}")
+    public ResponseEntity<ProductResponse> getBySku(@PathVariable String sku) {
+        return ResponseEntity.ok(productService.getBySku(sku));
+    }
+
     @GetMapping("/products/{id}/related")
     public ResponseEntity<List<ProductResponse>> getRelatedProducts(@PathVariable UUID id) {
         return ResponseEntity.ok(productService.getRelatedProducts(id));
