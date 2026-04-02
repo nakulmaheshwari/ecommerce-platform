@@ -33,6 +33,7 @@
         <module>services/search-service</module>
         <module>services/review-service</module>
         <module>services/recommendation-service</module>
+        <module>services/seller-service</module>
         <module>infrastructure/api-gateway</module>
         <module>infrastructure/config-server</module>
         <module>infrastructure/service-discovery</module>
